@@ -1,0 +1,81 @@
+#!/usr/bin/python
+from collections import namedtuple
+import psutil as pu
+from flask import Flask
+import json
+import daemon
+
+cpuTuple = namedtuple('cpuTuple', 'core, used')
+memTuple = namedtuple('memTuple', 'total, used')
+diskPartTuple = namedtuple('diskPartTuple', 'device, mountpoint, fstype, total, percent')
+networkTuple = namedtuple('networkTuple', 'device, sent, recv, pkg_sent, pkg_recv')
+processTuple = namedtuple('processTuple', 'pid, name, status, user, memory')
+
+app = Flask(__name__)
+
+def bytes2human(num):
+    for x in ['bytes', 'KB', 'MB', 'GB']:
+        if num < 1024.0:
+            return "%3.1f%s" % (num, x)
+        num /= 1024.0
+    return "%3.1f%s" % (num, 'TB')
+
+@app.route('/cpu/json')
+def get_cpu_info():
+    cpu_info = cpuTuple(core=pu.NUM_CPUS, used=pu.cpu_percent())
+    return json.dumps(cpu_info.__dict__)
+
+@app.route('/memory/json')
+def get_memory_info():
+    mem_info = memTuple(total=bytes2human(pu.TOTAL_PHYMEM), used=pu.virtual_memory().percent)
+    return json.dumps(mem_info.__dict__)
+
+@app.route('/partition/json')
+def get_partition_info():
+    partitions = list()
+    for part in pu.disk_partitions():
+        partitions.append(diskPartTuple(
+                    device=part.device,
+                    mountpoint=part.mountpoint,
+                    fstype=part.fstype,
+                    total=bytes2human(
+                        pu.disk_usage(part.mountpoint).total),
+                    percent=pu.disk_usage(part.mountpoint).percent))
+    return json.dumps(partitions)
+
+@app.route('/network/json')
+def get_networks_info():
+    networks = list()
+    for k, v in pu.network_io_counters(pernic=True).items():
+        if k == 'lo': continue
+        networks.append(networkTuple(
+                    device=k,
+                    sent=bytes2human(v.bytes_sent),
+                    recv=bytes2human(v.bytes_recv),
+                    pkg_sent=v.packets_sent,
+                    pkg_recv=v.packets_recv))
+    return josn.dumps(networks)
+
+@app.route('/process/json')
+def get_process_info():
+    processes = list()
+    for process in pu.get_process_list():
+        try:
+            percent = process.get_memory_percent()
+        except AccessDenied:
+            percent = "Access Denied"
+        else:
+            percent = int(percent)
+
+        processes.append(processTuple(
+                pid=process.pid,
+                name=process.name,
+                status=process.status,
+                user=process.username,
+                memory=percent))
+
+    processes_sorted = sorted( processes, key=lambda p: p.memory, reverse=True)
+    return json.dumps(processes_sorted)
+
+if __name__ == '__main__':
+    with daemon.DaemonContext(): app.run()
