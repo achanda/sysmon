@@ -54,7 +54,7 @@ def get_networks_info():
                     recv=bytes2human(v.bytes_recv),
                     pkg_sent=v.packets_sent,
                     pkg_recv=v.packets_recv))
-    return josn.dumps(networks)
+    return json.dumps(networks)
 
 @app.route('/process/json')
 def get_process_info():
